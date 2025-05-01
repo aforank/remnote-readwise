@@ -26,8 +26,25 @@ async function registerBookPowerup(plugin: RNPlugin) {
           name: 'Category',
         },
         {
+          code: bookSlots.source,
+          name: 'Source',
+        },
+        {
+          code: bookSlots.documentNote,
+          name: 'Document Note',
+        },
+        {
+          code: bookSlots.summary,
+          name: 'Summary',
+        },
+
+        {
           code: bookSlots.tags,
           name: 'Tags',
+        },
+        {
+          code: bookSlots.lastSyncDate,
+          name: 'Last Sync Date',
         },
       ],
     },

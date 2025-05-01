@@ -9,7 +9,7 @@ export const getReadwiseExportsSince = async (
 ): Promise<Either<ExportError, ReadwiseBook[]>> => {
   let fullData: ReadwiseBook[] = [];
   let nextPageCursor: string | null = null;
-
+  
   while (true) {
     const queryParams = new URLSearchParams();
     if (nextPageCursor) {

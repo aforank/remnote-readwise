@@ -12,8 +12,6 @@ export const getSyncer = (plugin: RNPlugin) => {
   return syncer;
 };
 
-const SYNC_INTERVAL = 2 * 60 * 1000; // 2 minutes
-
 class Syncer {
   plugin: RNPlugin;
   timeout: NodeJS.Timeout | undefined;
@@ -40,6 +38,21 @@ class Syncer {
     return await this.plugin.settings.getSetting<string>(settings.apiKey);
   };
 
+  private getInitDate = async () => {
+    const initDate = await this.plugin.settings.getSetting<string>(settings.initDate);
+    return initDate ? new Date(initDate) : undefined;
+  };
+
+  private getAutoSync = async () => {
+    const autoSync = await this.plugin.settings.getSetting<boolean>(settings.autoSync);
+    return autoSync;
+  };
+
+  private getAutoSyncInterval = async () => {
+    const syncInterval = await this.plugin.settings.getSetting<number>(settings.syncInterval);
+    return syncInterval * 60 * 1000; // convert to milliseconds
+  };
+
   private openSyncProgressModal = async () => {
     await this.plugin.widget.openPopup('importing', {}, false);
   };
@@ -52,26 +65,28 @@ class Syncer {
     await this.plugin.storage.setSynced(storage.syncProgress, percentageDone);
   };
 
-  private log(msg: string, notify = false) {
-    log(this.plugin, msg, notify);
+  private async log(msg: string, notify = false) {
+    await log(this.plugin, msg, notify);
   }
 
   private timeUntilNextSync = async () => {
     const lastSync = await this.getLastSync();
+    const syncInterval = await this.getAutoSyncInterval();
     if (!lastSync) {
       return 0;
     }
-    return Math.max(0, SYNC_INTERVAL - (Date.now() - lastSync.getTime()));
+    return Math.max(0, syncInterval - (Date.now() - lastSync.getTime()));
   };
 
   private async shouldRunPeriodicSync() {
     const lastSync = await this.plugin.storage.getSynced<string>(storage.lastSync);
+    const syncInterval = await this.getAutoSyncInterval();
     // If there's no last sync time, we haven't done an initial syncAll.
     if (!lastSync) {
       return false;
     }
     // has there been SYNC_INTERVAL ms since the last sync?
-    return new Date(lastSync).getTime() < new Date().getTime() - SYNC_INTERVAL;
+    return new Date(lastSync).getTime() < new Date().getTime() - syncInterval;
   }
 
   public async debug() {
@@ -87,7 +102,12 @@ class Syncer {
    * Should only be run once, when the user first installs the plugin.
    */
   public async syncAll() {
-    return this.syncHighlights({ ignoreLastSync: true, notify: true, showModal: true });
+    await this.syncHighlights({ ignoreLastSync: true, notify: true, showModal: true });
+  }
+
+  public async resetLastSync() {
+    await this.plugin.storage.setSynced(storage.lastSync, undefined);
+    this.log('Last sync time reset.', true);
   }
 
   /**
@@ -97,17 +117,47 @@ class Syncer {
    * If runImmediately is true, ignore the current sync timeout and run immediately.
    */
   public async syncLatest(runImmediately = false) {
-    this.log(`Running sync latest command with runImmediately=${runImmediately}`, runImmediately);
     const lastSync = await this.plugin.storage.getSynced<string>(storage.lastSync);
-    this.log(`Last sync: ${lastSync}`, runImmediately);
-    if (!lastSync) {
+    const firstRunCompleted = await this.plugin.storage.getSynced<string>(storage.hasDoneFirstRun);
+    const autoSync = await this.getAutoSync();
+    this.log(`Last sync: ${lastSync}, Auto Sync: ${autoSync}, Sync Interval: ${await this.getAutoSyncInterval() / 1000} seconds`);
+    if (!firstRunCompleted) {
+      await this.log(`First run not completed. Run Sync All command.`, runImmediately);
       return;
-    } else if (runImmediately || (await this.shouldRunPeriodicSync())) {
+    } 
+    if (!lastSync) {
+      await this.log(`Last sync date not found. Run Sync All command.`, runImmediately);
+      return;
+    }
+
+    this.log(`Running Readwise Sync...`, runImmediately);
+    
+    if (!autoSync) { // If autoSync is off
+      await this.syncHighlights({ notify: true, runImmediately: true});
+    }
+    else if (runImmediately || (await this.shouldRunPeriodicSync())) {
       clearTimeout(this.timeout);
       await this.syncHighlights({});
     } else {
       clearTimeout(this.timeout);
       this.timeout = setTimeout(() => this.syncHighlights({}), await this.timeUntilNextSync());
+    }
+  }
+
+  private async resetTimer() {
+    clearTimeout(this.timeout);
+    if (await this.getAutoSync()) {
+      const syncInterval = await this.getAutoSyncInterval();
+      this.timeout = setTimeout(() => this.syncLatest(), syncInterval);
+    }
+  }
+
+  private async evaluateLastSync(ignoreLastSync?: boolean) {
+    if(ignoreLastSync || !(await this.getLastSync())) {
+      return await this.getInitDate();
+    }
+    else {
+      return await this.getLastSync();
     }
   }
 
@@ -128,20 +178,18 @@ class Syncer {
       this.log('Sync already in progress.', true);
       return;
     } else if (!(await this.plugin.kb.isPrimaryKnowledgeBase())) {
-      clearTimeout(this.timeout);
-      this.timeout = setTimeout(() => this.syncLatest(), SYNC_INTERVAL);
+      await this.resetTimer();
       this.log('Skipping sync - not primary KB', opts.runImmediately);
       return;
     }
-    const lastSync = opts.ignoreLastSync ? undefined : await this.getLastSync();
+    const lastSync = await this.evaluateLastSync(opts.ignoreLastSync);
     try {
-      this.log('Syncing Readwise highlights...', opts.runImmediately);
       this.isSyncing = true;
       const result = await getReadwiseExportsSince(apiKey, lastSync?.toISOString());
       if (result.success) {
         const books = result.data;
         const total = books.reduce((acc, b) => acc + b.highlights.length, 0);
-        this.log(`Found ${books.length} books with ${total} highlights.`, opts.runImmediately);
+        await this.log(`Found ${books.length} books with ${total} highlights.`, opts.runImmediately);
         if (books && books.length > 0) {
           await this.updateSyncError('');
           await this.updateSyncProgress(0);
@@ -152,10 +200,10 @@ class Syncer {
             this.plugin,
             books,
             this.updateSyncProgress.bind(this),
-            !!lastSync
+            !!await this.getLastSync()
           );
           if (result.success) {
-            this.log(
+            await this.log(
               `Successfully imported ${result.data} books and highlights.`,
               !!opts.notify || opts.runImmediately
             );
@@ -181,8 +229,7 @@ class Syncer {
       this.log(`Unexpected Error while syncing Readwise highlights: ${e}`, true);
       await this.updateSyncError('Unexpected Error while syncing Readwise highlights');
     } finally {
-      clearTimeout(this.timeout);
-      this.timeout = setTimeout(() => this.syncLatest(), SYNC_INTERVAL);
+      await this.resetTimer();
       this.isSyncing = false;
     }
   };

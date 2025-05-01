@@ -1,9 +1,10 @@
 import { BuiltInPowerupCodes, Rem, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
-import { bookSlots, highlightSlots, powerups } from './consts';
+import { bookSlots, highlightSlots, powerups, settings } from './consts';
 import { log } from './log';
 import { Either } from './types/either';
 import { Highlight, ReadwiseBook } from './types/readwise';
 import { addLinkAsSource } from './utils';
+import { format } from 'date-fns';
 
 const findBookParentRem = async (plugin: RNPlugin) => {
   return await plugin.rem.findByName(['Readwise Books'], null);
@@ -76,6 +77,9 @@ const findOrCreateBookRem = async (
     if (book.author) {
       bookRem.setPowerupProperty(powerups.book, bookSlots.author, [book.author]);
     }
+    if (book.source_url) {
+      addLinkAsSource(plugin, bookRem, book.source_url);
+    }
     if (book.readwise_url) {
       addLinkAsSource(plugin, bookRem, book.readwise_url);
     }
@@ -89,6 +93,25 @@ const findOrCreateBookRem = async (
     if (book.category) {
       bookRem.setPowerupProperty(powerups.book, bookSlots.category, [book.category]);
     }
+
+    if (book.source) {
+      bookRem.setPowerupProperty(powerups.book, bookSlots.source, [book.source]);
+    }
+
+    if (book.document_note) {
+      bookRem.setPowerupProperty(powerups.book, bookSlots.documentNote, [book.document_note]);
+    }
+
+    if (book.summary) {
+      bookRem.setPowerupProperty(powerups.book, bookSlots.summary, [book.summary]);
+    }
+
+    const dateRem = await plugin.date.getTodaysDoc();
+
+    if(dateRem) {
+      bookRem.setPowerupProperty(powerups.book, bookSlots.lastSyncDate, await plugin.richText.rem(dateRem).value());
+    }
+
     if (book.book_tags && book.book_tags.length > 0) {
       for (const tag of book.book_tags) {
         const tagRem = await findOrCreateTopLevelRem(plugin, tag.name);
@@ -197,7 +220,10 @@ const findOrCreateHighlight = async (
       }
     }
   }
-  if (highlight.readwise_url) {
+
+  const highlightSource = await plugin.settings.getSetting<boolean>(settings.highlightSource);
+
+  if (highlightSource && highlight.readwise_url) {
     addLinkAsSource(plugin, highlightRem, highlight.readwise_url);
   }
   return { success: true, data: highlightRem };

@@ -1,15 +1,15 @@
 {
-  "author": "Jamesb",
+  "author": "Ankit Sharma (fork) | Jamesb (Original)",
   "name": "Readwise Sync",
   "description": "Sync your Readwise highlights with RemNote",
   "enableOnMobile": true,
   "id": "Jamesb-qb7y5il",
   "manifestVersion": 1,
-  "repoUrl": "https://github.com/bjsi/remnote-readwise",
+  "repoUrl": "https://github.com/aforank/remnote-readwise",
   "version": {
-    "major": 0,
+    "major": 1,
     "minor": 0,
-    "patch": 27
+    "patch": 0
   },
   "minimumRemNoteVersion": {
     "major": 1,

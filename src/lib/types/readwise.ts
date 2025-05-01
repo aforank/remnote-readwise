@@ -32,6 +32,8 @@ export interface ReadwiseBook {
   source_url: string;
   asin?: any;
   highlights: Highlight[];
+  document_note: string;
+  summary: string;
 }
 
 export interface ReadwiseHighlightExport {

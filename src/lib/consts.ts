@@ -1,5 +1,9 @@
 export const settings = {
   apiKey: 'api-key',
+  initDate: 'init-date',
+  autoSync: 'auto-sync',
+  syncInterval: 'sync-interval',
+  highlightSource: 'highlight-source'
 };
 
 export const powerups = {
@@ -12,7 +16,11 @@ export const bookSlots = {
   author: 'readwise-author',
   image: 'readwise-image',
   category: 'readwise-category',
+  documentNote: 'readwise-documentNote',
+  summary: 'readwise-summary',
+  source: 'readwise-source',
   tags: 'readwise-tags',
+  lastSyncDate: 'readwise-last-sync-date',
 };
 
 export const highlightSlots = {
